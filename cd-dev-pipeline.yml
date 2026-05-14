@@ -1,0 +1,84 @@
+trigger:
+  - dev
+
+variables:
+  - group: "vars-build-deploy"
+  - group: "secrets-build-deploy-dev"
+  - name: ENV
+    value: "dev"
+  - name: TENANT_ID
+    value: "423886c8-6a25-4d6b-8179-b37ce0ad02e9"
+  - name: ADB_URL_WORKSPACE
+    value: "https://adb-7744058492374197.17.azuredatabricks.net"
+  - name: ADB_CREDENTIAL_ID
+    value: "196045226244469"
+  - name: SP_DEVOPS_AGENT_CLIENT_ID
+    value: "44a6e8f6-902e-456c-875f-82d7f23c7f96"
+  - name: SP_DEVOPS_AGENT_CLIENT_SECRET
+    value: $(SP-DEVOPS-AGENT-CLIENT-SECRET)
+
+stages:
+# Check Phase: Check branch env
+- stage: Check
+  jobs:
+  - job: Check
+    steps:
+    - script: |
+        if [ "$(Build.SourceBranchName)" != "$(ENV)" ]; then
+          echo "La ejecución manual solo está permitida desde el branch $(ENV)."
+          exit 1
+        fi
+      displayName: 'Check branch $(ENV)'
+
+# Deployment Phase: Deploy the Data Factory using ARM template.
+- stage: Deploy
+  dependsOn: Check
+  condition: succeeded()
+  jobs:
+  - deployment: Deploy
+    environment: $(ENV)
+    pool:
+      name: 'vmss-rg-bigdata-$(ENV)-devops-agent'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+            - checkout: self
+
+            - script: |
+                ADB_ACCESS_TOKEN=$(curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+                https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token \
+                -d "client_id=$(SP_DEVOPS_AGENT_CLIENT_ID)" \
+                -d "grant_type=client_credentials" \
+                -d "scope=2ff814a6-3304-4ab8-85cb-cd0e6f879c1d%2F.default" \
+                -d "client_secret=$(SP_DEVOPS_AGENT_CLIENT_SECRET)" \
+                | grep -o '"access_token":"[^"]*' | grep -o '[^"]*$')
+                echo "ADB_ACCESS_TOKEN = $ADB_ACCESS_TOKEN"
+                echo "##vso[task.setvariable variable=ADB_ACCESS_TOKEN]$ADB_ACCESS_TOKEN"
+              displayName: 'Obtener OAuth2 Access Token para Databricks'
+
+            - script: |
+                DEVOPS_ACCESS_TOKEN=$(curl -X POST -H 'Content-Type: application/x-www-form-urlencoded' \
+                https://login.microsoftonline.com/$TENANT_ID/oauth2/v2.0/token \
+                -d "client_id=$(SP_DEVOPS_AGENT_CLIENT_ID)" \
+                -d "grant_type=client_credentials" \
+                -d "scope=499b84ac-1321-427f-aa17-267ca6975798%2F.default" \
+                -d "client_secret=$(SP_DEVOPS_AGENT_CLIENT_SECRET)" \
+                | grep -o '"access_token":"[^"]*' | grep -o '[^"]*$')
+                echo "DEVOPS_ACCESS_TOKEN = $DEVOPS_ACCESS_TOKEN"
+                echo "##vso[task.setvariable variable=DEVOPS_ACCESS_TOKEN]$DEVOPS_ACCESS_TOKEN"
+              displayName: 'Obtener OAuth2 Access Token para DevOps'
+
+            - script: |
+                curl -X PATCH $(ADB_URL_WORKSPACE)/api/2.0/git-credentials/$(ADB_CREDENTIAL_ID) --data '{"git_provider": "azureDevOpsServices", "git_username": "sp-rg-bigdata-$(ENV)-devops-agent", "personal_access_token": "$(DEVOPS_ACCESS_TOKEN)"}' --header "Authorization: Bearer $(ADB_ACCESS_TOKEN)"
+              displayName: 'Actualizar Access Token de git credentials'
+
+            - script: |
+                REPO_ID=$(curl $(ADB_URL_WORKSPACE)/api/2.0/workspace/get-status?path=/Repos/$(CELULA)/$(Build.Repository.Name) --header "Authorization: Bearer $(ADB_ACCESS_TOKEN)" | grep -o '"object_id":[0-9]*' | grep -o '[0-9]*')
+                echo "REPO_ID = $REPO_ID"
+                echo "##vso[task.setvariable variable=REPO_ID]$REPO_ID"
+              displayName: 'Obtener Repo ID'
+
+            - script: |
+                curl -X PATCH $(ADB_URL_WORKSPACE)/api/2.0/repos/$REPO_ID --data '{"branch": "$(ENV)"}' --header "Authorization: Bearer $(ADB_ACCESS_TOKEN)"
+              displayName: 'Actualizar Repo'

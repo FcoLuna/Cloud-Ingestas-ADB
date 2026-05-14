@@ -1,0 +1,25 @@
+{
+  "abfss":[
+      {
+        "path_file_ok":"/data/interacciones/campanas/usuario_mkt/catalogo_oferta_ingst/semaforizacion/mkthub/mkthub.nba_input_catalogo_ofertas.ok"
+      }
+  ],
+  "cat_delta":[
+      {
+        "catalogo_oferta_ingst_in": "raw_interacciones.catalogo_oferta"
+      }
+  ],
+  "jdbc":[
+      {
+        "url":"jdbc:oracle:thin:@(DESCRIPTION= (ADDRESS = (PROTOCOL = TCP)(HOST = smt-scan.tchile.local)(PORT = 1521)) (CONNECT_DATA = (SERVER = DEDICATED) (SERVICE_NAME = EXPLOTA)))",
+        "username":"MKTHUB_PROC",
+        "scope_azure":"secrets-nba-canales",
+        "secret_azure":"sec-oracle-mkhub-proc",
+        "driver":"oracle.jdbc.driver.OracleDriver",
+        "catalog_table_exadata":"MKTHUB.MH_NBA_INPUT_CATALOGO_OFERTAS",
+        "truncate":"BEGIN DO_TRUNCATE ('TABLE_NAME'); END;",
+        "SP_PKG_DM_LOG_MKTHUB_FN_CREUPD":"MKTHUB.PKG_DM_LOG_MKTHUB.FN_CREUPD(?,?,?,?,?)",
+        "numPartitions":"5"
+      }
+  ]
+}
